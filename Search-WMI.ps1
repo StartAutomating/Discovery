@@ -22,24 +22,40 @@
         Search-Wmi -Namespace root\default | Export-Clixml .\root.default.clixml
 	#>
 	param(
-		[Parameter(ValueFromPipelineByPropertyName=$true)]
-		[String]$ForName = "*",
-		[Parameter(ValueFromPipelineByPropertyName=$true)]
-		[String]$ForTextInDescription,
-		[Parameter(ValueFromPipelineByPropertyName=$true)]
-		[string]$ForAPropertyLike,
-		[switch]$OnlyIfThePropertyCanWrite,
-		[Parameter(ValueFromPipelineByPropertyName=$true)]
-		[string]$ForAMethodLike,
-		[Parameter(ValueFromPipelineByPropertyName=$true)]
-		[string]$Namespace = "root\cimv2",
-		[switch]$OnlyIfItCanBeCreated,
-		[switch]$OnlyIfItCanBeDeleted,
-		[switch]$OnlyIfItCanBeUpdated,		
-		[string]$ComputerName,
-		[Management.Automation.PSCredential]$Credential,
-		[Switch]$Recurse,
-		[Switch]$OnlySearchForAnEvent
+	# The name of the class you'd like to search for.  By default, *
+    [Parameter(ValueFromPipelineByPropertyName=$true)]
+	[String]$ForName = "*",
+
+
+    # If provided, will search for specific text in a class description
+	[Parameter(ValueFromPipelineByPropertyName=$true)]
+	[String]$ForTextInDescription,
+    
+    # If provided, will look for specific property names on a wmi class
+	[Parameter(ValueFromPipelineByPropertyName=$true)]
+	[string]$ForAPropertyLike,
+    # If set, will return properties that can write
+	[switch]$OnlyIfThePropertyCanWrite,
+    # If provided, will look for specific method names on a wmi class
+	[Parameter(ValueFromPipelineByPropertyName=$true)]
+	[string]$ForAMethodLike,
+    # The namespace you'd like to search in, by default root\CIMv2
+	[Parameter(ValueFromPipelineByPropertyName=$true)]
+	[string]$Namespace = "root\cimv2",
+    # If set, will only return wmi types that can be created
+	[switch]$OnlyIfItCanBeCreated,
+    # If set, will only return WMI types that can be deleted
+	[switch]$OnlyIfItCanBeDeleted,
+    # If set, will only return WMI types that can be updated
+	[switch]$OnlyIfItCanBeUpdated,		
+    # The name of the computer to get WMI information from
+	[string]$ComputerName,
+    # The credential used to connect to the computer
+	[Management.Automation.PSCredential]$Credential,
+    # If set, will search recursively
+	[Switch]$Recurse,
+    # If set, will only search for WMI event classes
+	[Switch]$OnlySearchForAnEvent
 	)
 	
     
@@ -67,7 +83,7 @@
     				Name='CanCreate'
     				Expression={
     					try {
-    						[bool]($_.Qualifiers.Item('SupportsCreate'))
+    						[bool](($_.Qualifiers.Item('SupportsCreate').Value))
     					} catch {
     						$false 
     					}					
@@ -76,7 +92,7 @@
     				Name='CanUpdate'
     				Expression={
     					try {
-    						[bool]($_.Qualifiers.Item('SupportsUpdate'))
+    						[bool](($_.Qualifiers.Item('SupportsUpdate').Value))
     					} catch {
     						$false
     					}}				
@@ -84,13 +100,61 @@
     				Name='CanDelete'
     				Expression={
     					try {
-    						[bool]$_.Qualifiers.Item('SupportsDelete')				
+    						[bool]($_.Qualifiers.Item('SupportsDelete').Value)
     					} catch {
     						$false
     					}
     					
     				}
     			}, @{
+                    Name='IsAbstract'
+                    Expression={
+    					try {
+    						[bool]($_.Qualifiers.Item('Abstract').Value)
+    					} catch {
+    						$false
+    					}    					
+    				}
+                },@{
+                    Name='IsSingleton'
+                    Expression={
+    					try {
+    						[bool]$_.Qualifiers.Item('Singleton').Value				
+    					} catch {
+    						$false
+    					}
+    					
+    				}
+                },@{
+                    Name='IsAssociation'
+                    Expression={
+    					try {
+    						[bool]$_.Qualifiers.Item('Association').Value				
+    					} catch {
+    						$false
+    					}
+    					
+    				}
+                },@{
+                    Name='Provider'
+                    Expression={
+    					try {
+    						$_.Qualifiers.Item('Provider').Value				
+    					} catch {
+    						""
+    					}
+    					
+    				}
+                },@{
+                    Label='Privileges'
+                    Expression = { 
+                        try {
+    						$_.Qualifiers.Item("Privileges").Value -join ','                                        
+    					} catch {
+    						""
+    					}
+                    }
+                },@{
     				Name='Properties'
     				Expression={
     					$_.Properties | 
@@ -98,6 +162,9 @@
     							Label='PropertyName'
     							Expression={$_.Name}
     						}, @{
+                                Label='PropertyType'
+    							Expression={$_.Type}
+                            }, @{
     							Label='Description'
     							Expression={$_.Qualifiers.Item("Description").Value}
     						}, @{
@@ -110,8 +177,53 @@
     									$_.Qualifiers.Item("Write").Value
     								} catch {
     									$false
-    								}}
-    						}
+    								}
+                                }
+    						}, @{
+                                Label='References'
+                                Expression = { 
+                                    try {
+    									$v = $_.Qualifiers.Item("CimType").Value
+                                        if ($v -like "ref:*") {
+                                            $v.Substring(4)
+                                        } else {
+                                            $null
+                                        }
+    								} catch {
+    									$false
+    								}
+                                }
+                            }, @{
+                                Label='MapsTo'
+                                Expression = { 
+                                    try {
+    									$_.Qualifiers.Item("MappingStrings").Value
+                                        
+    								} catch {
+    									""
+    								}
+                                }
+                            }, @{
+                                Label='Privileges'
+                                Expression = { 
+                                    try {
+    									$_.Qualifiers.Item("Privileges").Value -join ','                                        
+    								} catch {
+    									""
+    								}
+                                }
+                            }, @{
+                                Label='Units'
+                                Expression = { 
+                                    try {
+    									$_.Qualifiers.Item("Units").Value
+    								} catch {
+    									""
+    								}
+                                }
+                            }
+
+
     				}
     			}, @{
     				Name='Methods'
@@ -123,41 +235,69 @@
     						}, @{
     							Label='Description'
     							Expression={$_.Qualifiers.Item("Description").Value}
-    						}			
+    						}, @{
+                                Label='MapsTo'
+                                Expression = { 
+                                    try {
+    									$_.Qualifiers.Item("MappingStrings").Value
+                                        
+    								} catch {
+    									""
+    								}
+                                }
+                            }, @{
+                                Label='Privileges'
+                                Expression = { 
+                                    try {
+    									$_.Qualifiers.Item("Privileges").Value -join ','                                        
+    								} catch {
+    									""
+    								}
+                                }
+                            }, @{
+                                Label='IsStatic'
+                                Expression = {
+                                    try {
+    									[bool]$_.Qualifiers.Item("Static").Value
+    								} catch {
+    									$false 
+    								}
+                                }
+                            }, @{
+                                Label='IsConstructor'
+                                Expression = {
+                                    try {
+    									[bool]$_.Qualifiers.Item("Constructor").Value
+    								} catch {
+    									$false 
+    								}
+                                }
+                            }, @{
+                                Label='IsDestructor'
+                                Expression = {
+                                    try {
+    									[bool]$_.Qualifiers.Item("Destructor").Value
+    								} catch {
+    									$false 
+    								}
+                                }
+                            }			
     				}
     			}, @{
     				Name='IsEvent'
     				Expression = { $_.Derivation -contains '__Event' } 
     			}, @{
-                    Name='ValueMaps'
-                    Expression = {
-                        $_.psbase.properties | 
-                            Where-Object {
-                                $_.Qualifiers['ValueMap'] -and $_.Qualifiers['Values']
-                            } | 
-                            ForEach-Object -Begin {
-                                $ht = @{}
-                            } -End {
-                                $ht
-                            } -Process {
-                                $name = $_.Name
-                                $valueMap = $_.Qualifiers['ValueMap'].Value -split ([Environment]::NewLine)
-                                $values= $_.Qualifiers['Values'].Value -split ([Environment]::NewLine)
-                                
-                                $lookupScript = ""
-                                for ($i= 0;$i-lt $values.Count;$i++) {
-                                    if (-not ($ValueMap[$i] -as [int])) { continue }
-                                    $lookupScript += "if (`$this.psbase.properties['$name'].value -eq $($valueMap[$i])) { return '$($values[$i])'}
-" 
-
-                               }
-                                
-                                $lookupScript += "return 'Unknown'"
-                            
-                                #$lookupScript       
-                                $ht.$name = [ScriptBlock]::Create($lookupScript)            
-                            }                        
-                    }
+                    Name='IsSystemClass'
+                    Expression = { $_.Derivation -contains '__SystemClass' } 
+                }, @{
+                    Name='IsDeprecated'
+                    Expression = { 
+                        try {
+    					    $_.Qualifiers.Item("DEPRECATED").Value
+    					} catch {
+    						$false
+    					}
+                    } 
                 }|
     			Where-Object {
     				if ($OnlyIfItCanBeCreated) {
